@@ -45,7 +45,7 @@ class Uri
 		'userinfo' => 'username ( ":" password ) ?',
 		'domainlabel' => 'alphadigit ( ( alphadigit | "-" ) * alphadigit ) ?',
 		'hostname' => 'domainlabel ( "." | domainlabel ) *',
-		'ipv4' => 'ipv4digits ( "." ipv4digits ) {3}',
+		'ipv4' => 'ipv4digits ( "." ipv4digits ) {3,3}',
 		'request_uri' => '( path ? file ) ? ( "?" flags ) ?',
 		'serv' => 'host ( ":" port ? ) ?',
 		'pre' => '( ( scheme "://" ) ( auth "@" ) ? serv ) ?',
