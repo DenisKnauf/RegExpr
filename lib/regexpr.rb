@@ -2,6 +2,7 @@
 class RegExpr< Hash
 end
 
+# any thing
 class RegExpr::Segment
 	attr_accessor :value
 	def initialize( val) self.value= val end
@@ -22,12 +23,14 @@ class RegExpr::Segment
 			v
 		end
 
+		# can't have any segment as value
 		def deepest
 			self.class_eval do
 				def names() [] end
 			end
 		end
 
+		# can't have any value
 		def novalue
 			self.class_eval do
 				def initialize() end
@@ -45,6 +48,7 @@ class RegExpr::Segment
 	end
 end
 
+# /(VALUE)/ or /(?:VALUE)/
 class RegExpr::Block< RegExpr::Segment
 	attr_accessor :name, :hidden
 	def hidden?() @hidden end
@@ -53,6 +57,10 @@ class RegExpr::Block< RegExpr::Segment
 	def pop() @value.pop end
 	def empty?() @value.empty? end
 	def size() @value.size end
+
+	def inspect
+		"#<#{self.class.name}: (#{hidden? ? '?:' : ''} #{value.map(&:inspect).join ' '} )>"
+	end
 
 	def names
 		names= @value.collect &:names
@@ -76,9 +84,11 @@ class RegExpr::Block< RegExpr::Segment
 			else list[ -1].push v
 			end
 		end
+		#return self
 
+		# [A,C,A,C,Cs,As,C,Cs,C] => [A,A,As], chars = [C,C|Cs]++[C|Cs]++[C]
 		list.delete_if do |v|
-			if (RegExpr::Chars === v[ 0] and v.size == 1 ) or RegExpr::Char === v[ 0]
+			if (1 == v.size and RegExpr::Chars === v[ 0]) or RegExpr::Char === v[ 0]
 				chars+= v[ 0]
 			else false
 			end
@@ -100,7 +110,7 @@ class RegExpr::Block< RegExpr::Segment
 							u ? w : w.value
 						else w
 						end
-					end.flatten
+					end.flatten.compact
 				end
 		end
 		values.push RegExpr::Or.new, chars  if chars.size > 0
@@ -114,6 +124,7 @@ class RegExpr::Block< RegExpr::Segment
 	end
 end
 
+# /(?!VALUE)/
 class RegExpr::Not< RegExpr::Segment
 	deepest
 	novalue
@@ -126,6 +137,7 @@ class RegExpr::Not< RegExpr::Segment
 	end
 end
 
+# eg: 1..99 => /[1-9]|[1-9][1-9]/
 class RegExpr::Range< RegExpr::Segment
 	novalue
 	attr_accessor :v1, :v2
@@ -143,9 +155,9 @@ class RegExpr::Range< RegExpr::Segment
 		bf= b == 0 ? 1.0 : b.to_f
 		1.upto( b.to_s.length- 1) do |i|
 			pot= 10** i
-			num= (af/ pot).ceil* pot   # next higher number with i zeros
+			num= (af/ pot).ceil * pot   # next higher number with i zeros
 			arr.insert i, num  if num < @v2
-			num= (bf/ pot).floor* pot  # next lower number with i zeros
+			num= (bf/ pot).floor * pot  # next lower number with i zeros
 			arr.insert -i, num
 		end
 		arr.uniq!
@@ -153,15 +165,13 @@ class RegExpr::Range< RegExpr::Segment
 
 		result= RegExpr::Block.new
 		0.upto( arr. length- 2) do |i|
-			first= arr[ i].to_s
-			second= (arr[ i+ 1]- 1).to_s
+			first, second= arr[ i].to_s, (arr[ i+ 1]- 1).to_s
 			result.push RegExpr::Or.new
 			0.upto( first.length- 1) do |j|
-				result.push( if first[ j] == second[ j]
-						RegExpr::Char.new first[ j].chr
-					else
-						RegExpr::Chars.new '%c-%c'% [ first[ j], second[ j] ]
-					end)
+				fst, sec= first[ j], second[ j]
+				result.push fst == sec ?
+						RegExpr::Char.new( fst.chr) :
+						RegExpr::Chars.new( '%c-%c'% [ fst, sec ])
 			end
 		end
 		result. value. shift
@@ -169,6 +179,7 @@ class RegExpr::Range< RegExpr::Segment
 	end
 end
 
+# /[CHARS]/ or /[^CHARS]/
 class RegExpr::Chars< RegExpr::Segment
 	deepest
 	attr_reader :chars, :not
@@ -180,6 +191,10 @@ class RegExpr::Chars< RegExpr::Segment
 	def value() (self. not? ? '^' : '')+ (@chars) end
 	def not!() @not= !@not end
 	alias -@ not!
+
+	def inspect
+		"#<#{self.class.name}: [#{value}]>"
+	end
 
 	def split
 		chars= []
@@ -241,7 +256,9 @@ class RegExpr::Chars< RegExpr::Segment
 	end
 end
 
+# /VALUE{MIN,MAX}/
 class RegExpr::Repeat< RegExpr::Segment
+	SimpleChar= Hash[ *%w<{,1} ? {0,1} ? {0,} * {,} * {1,} +> + ['{1,1}', ''] ]
 	attr_reader :min, :max
 
 	def minandmax x
@@ -265,8 +282,7 @@ class RegExpr::Repeat< RegExpr::Segment
 	def to_r
 		t= '{%s,%s}'% [ @min||'', @max||'' ]
 		return ''  if '{0,0}' == t
-		t= Hash[ *%w<{,1} ? {0,1} ? {0,} * {,} * {1,} +>+ ['{1,1}', ''] ][ t]|| t
-		@value.to_r+ t
+		@value.to_r+ (SimpleChar[ t] || t)
 	end
 end
 
@@ -343,15 +359,16 @@ class RegExpr
 		end
 	end
 
-	def to_r exp= :main
-		r = self.to_re( exp)
-		#r.optimize!
+	def to_r exp= nil
+		r = self.to_re exp
+		r.optimize!
 		h, r = r.hidden?, r.to_r
 		r = r[ 1...-1]  unless h
 		::Regexp.new r
 	end
 
-	def to_re exp= :main
+	def to_re exp= nil
+		exp||= :main
 		u= RegExpr::Block.new
 		t, u.hidden= if Symbol === exp
 				u.name= exp.to_sym
@@ -361,7 +378,11 @@ class RegExpr
 				end
 			else [ exp.to_s, true]
 			end
+		parse t
+	end
 
+	def parse t, u= nil
+		u||= RegExpr::Block.new
 		until !t or t.empty?
 			v, t= self.to_r_next t
 			case v
@@ -394,7 +415,8 @@ class RegExpr
 			i= exp[ 2.. -1].to_i h
 			return RegExpr::Char.new( i.chr), exp[ (i.to_s( h). size+ 2).. -1]
 
-		when ?.  then return RegExpr::WildCard.new( '.'), exp[ 1.. -1]
+		when ?.
+			return RegExpr::WildCard.new( '.'), exp[ 1.. -1]
 
 		when ?0
 			case exp[ 1]
@@ -406,13 +428,17 @@ class RegExpr
 				return '', $1.to_i( 2).to_s+ $'
 			else
 				case exp
-				when %r<(\d+)..(\d+)>  then RegExpr::Range.new $1.to_i, $2.to_i
-				when %r<^(\d+,\d+|,\d+|\d+,?)>  then RegExpr::Repeat.new '', *$1.split( ',')
-				else raise ArgumentError, 'Unknown form "%s"'% exp
+				when %r<(\d+)..(\d+)>
+					RegExpr::Range.new $1.to_i, $2.to_i
+				when %r<^(\d+,\d+|,\d+|\d+,?)>
+					RegExpr::Repeat.new '', *$1.split( ',')
+				else
+					raise ArgumentError, 'Unknown form "%s"'% exp
 				end
 			end
 
-		when ?(  then return self.to_re( exp[ 1.. -1])
+		when ?(
+			return parse( exp[ 1.. -1])
 		when ?)  then ')'
 		when ?|  then RegExpr::Or.new
 
@@ -420,19 +446,26 @@ class RegExpr
 		when ?*  then RegExpr::Repeat.new '', nil
 		when ??  then RegExpr::Repeat.new '', 0, 1
 
-		when ?"  then RegExpr::Char.new %r<^"((?:[^"]|\\")*)">.match( exp)[ 1]
-		when ?[  then RegExpr::Chars.new %r<^\[((?:[^\]]|\\\])*[^\\]|)\]>.match( exp)[ 1]
-		when ?/  then exp =~ %r<^/((?:[^/]|\\/)*)/(im?|mi)?>
-			RegExpr::Regexp.new ::Regexp.new( $1,
-					($2 =~ /i/ ? ::Regexp::IGNORECASE : 0)+
-					($2 =~ /m/ ? ::Regexp::MULTILINE : 0))
+		when ?"
+			RegExpr::Char.new %r<^"((?:[^"]|\\")*)">.match( exp)[ 1]
+		when ?[
+			RegExpr::Chars.new %r<^\[((?:[^\]]|\\\])*[^\\]|)\]>.match( exp)[ 1]
+		when ?/
+			_, re, f= %r<^/((?:[^/]|\\/)*)/(im?|mi)?>.match( exp)
+			flg= $2=~ /i/ ? ::Regexp::IGNORECASE : 0
+			flg+= $2=~ /m/ ? ::Regexp::MULTILINE : 0
+			RegExpr::Regexp.new ::Regexp.new( re, flg)
 
 		else
 			case exp
-			when %r<^([a-z_][a-z_0-9]*\b)>i  then self.to_re $1.to_sym
-			when %r<(\d+)..(\d+)>  then RegExpr::Range.new $1.to_i, $2.to_i
-			when %r<^(\d+,\d+|,\d+|\d+,?)>  then RegExpr::Repeat.new '', *$1.split( ',')
-			else raise ArgumentError, 'Unknown form "%s"'% exp
+			when %r<^([a-z_][a-z_0-9]*\b)>i
+				self.to_re $1.to_sym
+			when %r<(\d+)..(\d+)>
+				RegExpr::Range.new $1.to_i, $2.to_i
+			when %r<^(\d+,\d+|,\d+|\d+,?)>
+				RegExpr::Repeat.new '', *$1.split( ',')
+			else
+				raise ArgumentError, 'Unknown form "%s"'% exp
 			end
 		end
 		[ t, $' ]
