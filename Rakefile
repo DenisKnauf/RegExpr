@@ -6,7 +6,7 @@ begin
   Jeweler::Tasks.new do |gem|
     gem.name = "RegExpr"
     gem.summary = %Q{Regular Expression Creator}
-    gem.description = %Q{Write Regular Expressions in a Hash and generats an optimized Regex}
+    gem.description = %Q{Write Regular Expressions in a Hash and generates an optimized Regex}
     gem.email = "Denis.Knauf@gmail.com"
     gem.homepage = "http://github.com/DenisKnauf/RegExpr"
     gem.authors = ["Denis Knauf"]
